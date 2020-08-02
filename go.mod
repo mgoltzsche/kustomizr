@@ -1,4 +1,4 @@
-module github.com/mgoltzsche/kpt-kustomize
+module github.com/mgoltzsche/kustomizr
 
 go 1.14
 

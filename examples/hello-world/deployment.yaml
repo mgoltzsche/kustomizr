@@ -1,0 +1,18 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello-world
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+      - name: hello-world
+        image: alpine:3.12
+        command: ["/bin/sh", "-c", "echo Hello $AUDIENCE; sleep infinite"]
+        env:
+        - name: AUDIENCE
+          valueFrom:
+            configMapKeyRef:
+              name: hello-config
+              key: audience

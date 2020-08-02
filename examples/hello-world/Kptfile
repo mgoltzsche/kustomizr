@@ -1,0 +1,13 @@
+apiVersion: kpt.dev/v1alpha1
+kind: Kptfile
+metadata:
+  name: hello-world
+packageMetadata:
+  shortDescription: kpt kustomize function example
+openAPI:
+  definitions:
+    io.k8s.cli.setters.namespace:
+      x-k8s-cli:
+        setter:
+          name: namespace
+          value: default

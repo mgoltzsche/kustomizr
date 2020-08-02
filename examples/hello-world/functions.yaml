@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: render-kustomization
+  annotations:
+    config.kubernetes.io/function: |
+      container:
+        image: mgoltzsche/kustomizr
+    config.kubernetes.io/local-config: 'true'
+data:
+  path: .
+  outputPath: deploy/generated.yaml
+  '--reorder': none

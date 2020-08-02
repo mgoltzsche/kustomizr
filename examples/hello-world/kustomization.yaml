@@ -1,0 +1,10 @@
+commonLabels:
+  app: hello-world
+resources:
+- deployment.yaml
+configMapGenerator:
+- name: hello-config
+  literals:
+  - audience=world
+namePrefix: dev-
+namespace: default # {"$kpt-set":"namespace"}

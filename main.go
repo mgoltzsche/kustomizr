@@ -17,51 +17,35 @@ import (
 
 const (
 	flagPath                     = "path"
+	flagOutputPath               = "outputPath"
 	apiVersionConfigKubernetesIO = "config.kubernetes.io"
-	apiVersionConfigK8sIO        = "config.k8s.io"
 	annotationIndex              = apiVersionConfigKubernetesIO + "/index"
-	annotationLocalConfig        = apiVersionConfigK8sIO + "/local-config"
-	kustomizationFile            = "kustomization.yaml"
-	inventoryTemplateFile        = "inventory-template.yaml"
-	kindKustomization            = "Kustomization"
-	apiVersionKustomization      = "kustomize.config.k8s.io/v1beta1"
-)
-
-func kptAnnotationMatcher(name string) func(map[string]string) string {
-	name1 := apiVersionConfigKubernetesIO + "/" + name
-	name2 := apiVersionConfigK8sIO + "/" + name
-	return func(a map[string]string) string {
-		v1 := a[name1]
-		v2 := a[name2]
-		if v1 != "" {
-			return v1
-		}
-		return v2
-	}
-}
-
-var (
-	annotationPath     = kptAnnotationMatcher("path")
-	annotationFunction = kptAnnotationMatcher("function")
+	annotationPath               = apiVersionConfigKubernetesIO + "/path"
+	kustomizationFileName        = "kustomization.yaml"
 )
 
 func main() {
-	path := "."
+	pathOption := "."
+	outputFileOption := filepath.Join("deploy", "generated.yaml")
 	config := configMap{}
 	resourceList := &framework.ResourceList{FunctionConfig: &config}
-	cmd := framework.Command(resourceList, func() error {
-		if len(resourceList.Items) == 0 {
-			return fmt.Errorf("no resources provided")
+	cmd := framework.Command(resourceList, func() (err error) {
+		outputFileOption = filepath.Clean(outputFileOption)
+		copyFromInput := false
+		kptDir := pathOption
+		kustomizationDir := filepath.Clean(pathOption)
+		if !filepath.IsAbs(pathOption) {
+			// Prepare temp dir to copy from stdin
+			// when project dir is not mounted
+			copyFromInput = true
+			kptDir, err = ioutil.TempDir("", "")
+			if err != nil {
+				return err
+			}
+			defer os.RemoveAll(kptDir)
+			kustomizationDir = filepath.Join(kptDir, pathOption)
 		}
-		tmpDir, err := ioutil.TempDir("", "")
-		if err != nil {
-			return err
-		}
-		defer os.RemoveAll(tmpDir)
-		kustomizationFile := filepath.Join(path, "kustomization.yaml")
-		kustomizationFileFound := false
-		preservedResources := []*yaml.RNode{}
-		lastNamespace := ""
+		filteredItems := make([]*yaml.RNode, 0, len(resourceList.Items))
 
 		for _, item := range resourceList.Items {
 			meta, err := item.GetMeta()
@@ -71,97 +55,64 @@ func main() {
 			if meta.Annotations == nil {
 				continue
 			}
-			itemPath := annotationPath(meta.Annotations)
-			if itemPath == "" || filepath.IsAbs(itemPath) {
+			// Exclude resources from previous output or with absolute or unknown path
+			itemPath := meta.Annotations[annotationPath]
+			if itemPath == "" || filepath.IsAbs(itemPath) || itemPath == outputFileOption {
 				continue
 			}
-			if itemPath == kustomizationFile {
-				kustomizationFileFound = true
-			}
+			filteredItems = append(filteredItems, item)
 
-			itemFileName := filepath.Base(itemPath)
-			if itemFileName == kustomizationFile {
-				if item.Field(yaml.APIVersionField) == nil {
-					err = item.PipeE(yaml.FieldSetter{Name: yaml.APIVersionField, StringValue: apiVersionKustomization})
+			if copyFromInput {
+				// Write stdin to temp dir
+				transformed := item
+				if filepath.Base(itemPath) == kustomizationFileName {
+					transformed = yaml.MustParse(transformed.MustString())
+					err = transformed.PipeE(yaml.FieldSetter{Name: yaml.MetadataField, Value: nil})
 					if err != nil {
 						return err
 					}
 				}
-				if item.Field(yaml.KindField) == nil {
-					err = item.PipeE(yaml.FieldSetter{Name: yaml.KindField, StringValue: kindKustomization})
-					if err != nil {
-						return err
-					}
-				}
-
-				trueStr := yaml.NewScalarRNode("true")
-				trueStr.YNode().Style = yaml.SingleQuotedStyle
-				err = item.PipeE(yaml.LookupCreate(yaml.ScalarNode, yaml.MetadataField, yaml.AnnotationsField, annotationLocalConfig), yaml.FieldSetter{Value: trueStr, OverrideStyle: true})
+				tmpItemPath := filepath.Join(kptDir, itemPath)
+				err = writeFile(tmpItemPath, transformed)
 				if err != nil {
 					return err
 				}
-				preserved := yaml.MustParse(item.MustString())
-				preservedResources = append(preservedResources, preserved)
-
-				// Workaround for https://github.com/GoogleContainerTools/kpt/issues/755
-				nameNode := yaml.NewScalarRNode("kustomization")
-				nameNode.YNode().Style = yaml.SingleQuotedStyle
-				err = preserved.PipeE(yaml.LookupCreate(yaml.ScalarNode, yaml.MetadataField, yaml.NameField), yaml.FieldSetter{Value: nameNode})
-				if err != nil {
-					return err
-				}
-				defer func() {
-					nsNode := yaml.NewScalarRNode(lastNamespace)
-					nsNode.YNode().Style = yaml.SingleQuotedStyle
-					preserved.PipeE(yaml.LookupCreate(yaml.ScalarNode, yaml.MetadataField, yaml.NamespaceField), yaml.FieldSetter{Value: nsNode})
-				}()
-
-				err = item.PipeE(yaml.FieldSetter{Name: yaml.MetadataField, Value: nil})
-				if err != nil {
-					return err
-				}
-				err = item.PipeE(yaml.FieldSetter{Name: yaml.APIVersionField, Value: yaml.NullNode()})
-				if err != nil {
-					return err
-				}
-				err = item.PipeE(yaml.FieldSetter{Name: yaml.KindField, Value: yaml.NullNode()})
-				if err != nil {
-					return err
-				}
-			} else if annotationFunction(meta.Annotations) != "" || itemFileName == inventoryTemplateFile {
-				preservedResources = append(preservedResources, item)
-			}
-
-			tmpItemPath := filepath.Join(tmpDir, itemPath)
-			data, err := item.String()
-			if err != nil {
-				return err
-			}
-			err = os.MkdirAll(filepath.Dir(tmpItemPath), 0755)
-			if err != nil {
-				return err
-			}
-			err = writeFile(tmpItemPath, []byte("---\n"+data))
-			if err != nil {
-				return err
 			}
 		}
-		if !kustomizationFileFound {
-			return fmt.Errorf("kustomization file %s is not among function input", kustomizationFile)
-		}
 
-		kArgs := kustomizeArgs(path, config.Data)
-		var transformed []*yaml.RNode
-		transformed, lastNamespace, err = buildKustomization(tmpDir, kArgs)
+		// Render the kustomization
+		kArgs := kustomizeArgs(kustomizationDir, config.Data)
+		transformed, err := buildKustomization(outputFileOption, kArgs)
 		if err != nil {
 			return err
 		}
-		resourceList.Items = transformed
-		resourceList.Items = append(resourceList.Items, preservedResources...)
+
+		if filepath.IsAbs(outputFileOption) {
+			// Write file to disk (sink) when absolute output path provided
+			manifest := ""
+			for _, o := range transformed {
+				data, err := o.String()
+				if err != nil {
+					return err
+				}
+				manifest += "---\n" + data
+			}
+			err = ioutil.WriteFile(outputFileOption, []byte(manifest), 0644)
+			if err != nil {
+				return err
+			}
+		}
+
+		// Add rendered resources to output
+		resourceList.Items = append(filteredItems, transformed...)
 		return nil
 	})
-	cmd.Flags().StringVar(&path, flagPath, path, "path to kustomization")
+
+	cmd.Flags().StringVar(&pathOption, flagPath, pathOption, "path to kustomization")
+	cmd.Flags().StringVar(&outputFileOption, flagOutputPath, outputFileOption, "output manifest path")
+
 	if err := cmd.Execute(); err != nil {
+		os.Stderr.WriteString("\n")
 		os.Exit(1)
 	}
 }
@@ -171,33 +122,29 @@ type configMap struct {
 }
 
 func kustomizeArgs(path string, config map[string]string) []string {
-	a := make([]string, 2, len(config)+2)
-	a[0] = "build"
-	a[1] = path
+	a := make([]string, 0, len(config)+2)
+	a = append(a, "build", path)
 	for k, v := range config {
-		if k != flagPath {
+		if k != flagPath && k != flagOutputPath {
 			a = append(a, fmt.Sprintf("%s=%s", k, v))
 		}
 	}
 	return a
 }
 
-func buildKustomization(tmpDir string, kustomizeArgs []string) ([]*yaml.RNode, string, error) {
+func buildKustomization(outputPath string, kustomizeArgs []string) ([]*yaml.RNode, error) {
+	var stdout, stderr bytes.Buffer
 	cmd := exec.Command("kustomize", kustomizeArgs...)
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	cmd.Dir = tmpDir
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 	if err != nil {
-		return nil, "", fmt.Errorf("kustomize build: %w: %s", err, strings.TrimSpace(stderr.String()))
+		return nil, fmt.Errorf("kustomize build: %w: %s", err, strings.TrimSpace(stderr.String()))
 	}
 
 	// Parse output
 	r := []*yaml.RNode{}
 	d := yaml.NewDecoder(&stdout)
-	lastNamespace := ""
 	for {
 		v := yaml.Node{}
 		o := yaml.NewRNode(&v)
@@ -205,23 +152,32 @@ func buildKustomization(tmpDir string, kustomizeArgs []string) ([]*yaml.RNode, s
 		if err != nil {
 			break
 		}
-		err = o.PipeE(yaml.Lookup(yaml.MetadataField, yaml.AnnotationsField), yaml.FieldSetter{Name: annotationIndex, StringValue: strconv.Itoa(len(r))})
+		lookupAnnotations := yaml.LookupCreate(yaml.MappingNode, yaml.MetadataField, yaml.AnnotationsField)
+		err = o.PipeE(lookupAnnotations, yaml.FieldSetter{Name: annotationIndex, StringValue: strconv.Itoa(len(r))})
 		if err != nil {
-			return nil, "", err
+			break
 		}
-		m, _ := o.GetMeta()
-		if m.Namespace != "" {
-			lastNamespace = m.Namespace
+		err = o.PipeE(lookupAnnotations, yaml.FieldSetter{Name: annotationPath, StringValue: outputPath})
+		if err != nil {
+			break
 		}
 		r = append(r, o)
 	}
 	if err != nil && err != io.EOF {
-		return nil, "", fmt.Errorf("parse kustomize output: %w", err)
+		return nil, fmt.Errorf("process kustomize output: %w", err)
 	}
-	return r, lastNamespace, nil
+	return r, nil
 }
 
-func writeFile(file string, data []byte) (err error) {
+func writeFile(file string, transformed *yaml.RNode) (err error) {
+	data, err := transformed.String()
+	if err != nil {
+		return
+	}
+	err = os.MkdirAll(filepath.Dir(file), 0755)
+	if err != nil {
+		return
+	}
 	f, err := os.OpenFile(file, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
 		return
@@ -231,6 +187,6 @@ func writeFile(file string, data []byte) (err error) {
 			err = e
 		}
 	}()
-	_, err = f.Write(data)
+	_, err = f.Write([]byte("---\n" + data))
 	return
 }
