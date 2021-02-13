@@ -1,7 +1,9 @@
 FROM golang:1.14-alpine3.12 AS build
 
 RUN apk add --update --no-cache git curl
-RUN curl -fsSL https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv3.8.1/kustomize_v3.8.1_linux_amd64.tar.gz | tar -xvzf - && mv kustomize /usr/local/bin/
+ARG KUSTOMIZE_VERSION=3.9.3
+RUN curl -fsSL https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv${KUSTOMIZE_VERSION}/kustomize_v${KUSTOMIZE_VERSION}_linux_amd64.tar.gz | tar -xvzf - \
+	 && mv kustomize /usr/local/bin/
 
 ENV GO111MODULE=on CGO_ENABLED=0
 
