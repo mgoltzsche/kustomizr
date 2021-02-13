@@ -30,6 +30,7 @@ func main() {
 	config := configMap{}
 	resourceList := &framework.ResourceList{FunctionConfig: &config}
 	cmd := framework.Command(resourceList, func() (err error) {
+		fmt.Fprintln(os.Stderr, "# Running kustomize", os.Getenv("KUSTOMIZE_VERSION"))
 		outputFileOption = filepath.Clean(outputFileOption)
 		copyFromInput := false
 		kptDir := pathOption

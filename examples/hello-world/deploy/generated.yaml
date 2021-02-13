@@ -25,7 +25,7 @@ spec:
           valueFrom:
             configMapKeyRef:
               key: audience
-              name: dev-hello-config-h7872h2b6h
+              name: dev-hello-config-d2842mm7gh
         image: alpine:3.12
         name: hello-world
 ---
@@ -36,5 +36,5 @@ kind: ConfigMap
 metadata:
   labels:
     app: hello-world
-  name: dev-hello-config-h7872h2b6h
+  name: dev-hello-config-d2842mm7gh
   namespace: default

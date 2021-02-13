@@ -1,7 +1,9 @@
+ARG KUSTOMIZE_VERSION=4.0.0
+
 FROM golang:1.14-alpine3.12 AS build
 
 RUN apk add --update --no-cache git curl
-ARG KUSTOMIZE_VERSION=3.9.3
+ARG KUSTOMIZE_VERSION
 RUN curl -fsSL https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv${KUSTOMIZE_VERSION}/kustomize_v${KUSTOMIZE_VERSION}_linux_amd64.tar.gz | tar -xvzf - \
 	 && mv kustomize /usr/local/bin/
 
@@ -15,5 +17,7 @@ RUN go build -ldflags '-s -w -extldflags "-static"' . && mv kustomizr /usr/local
 
 FROM alpine:3.12
 RUN apk add --update --no-cache git
+ARG KUSTOMIZE_VERSION
+ENV KUSTOMIZE_VERSION=${KUSTOMIZE_VERSION}
 COPY --from=build /usr/local/bin/ /usr/local/bin/
 ENTRYPOINT ["/usr/local/bin/kustomizr"]
