@@ -12,6 +12,6 @@ for i in 1 2; do
 	kpt fn run $EXAMPLE
 	# TODO: preserve kustomize order
 	assertKptSourceNamesEqual $EXAMPLE/deploy 'dev-hello-world
-dev-hello-config-h7872h2b6h
+dev-hello-config-d2842mm7gh
 inventory'
 done
