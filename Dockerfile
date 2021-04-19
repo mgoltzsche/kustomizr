@@ -1,6 +1,6 @@
-ARG KUSTOMIZE_VERSION=4.0.4
+ARG KUSTOMIZE_VERSION=4.1.2
 
-FROM golang:1.14-alpine3.12 AS build
+FROM golang:1.16-alpine3.13 AS build
 
 RUN apk add --update --no-cache git curl
 ARG KUSTOMIZE_VERSION
@@ -15,7 +15,7 @@ RUN go mod download
 COPY main.go /go/src/github.com/mgoltzsche/kustomizr/
 RUN go build -ldflags '-s -w -extldflags "-static"' . && mv kustomizr /usr/local/bin/
 
-FROM alpine:3.12
+FROM alpine:3.13
 RUN apk add --update --no-cache git
 ARG KUSTOMIZE_VERSION
 ENV KUSTOMIZE_VERSION=${KUSTOMIZE_VERSION}
