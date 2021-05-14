@@ -1,4 +1,5 @@
-IMAGE ?= docker.io/mgoltzsche/kustomizr:latest
+VERSION ?= latest
+IMAGE ?= docker.io/mgoltzsche/kustomizr:$(VERSION)
 
 BUILD_DIR := $(shell pwd)/build
 BIN_DIR := $(BUILD_DIR)/bin
@@ -29,7 +30,9 @@ check-repo-unchanged:
 		echo 'Please call `make static-manifests` and commit the resulting changes.'; \
 		false) >&2
 
-release: image test check-repo-unchanged docker-push
+release:
+	make image test check-repo-unchanged docker-push VERSION=latest
+	make image docker-push VERSION=$(VERSION)
 
 $(KPT): kpt
 kpt:
