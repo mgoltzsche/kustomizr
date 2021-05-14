@@ -26,7 +26,7 @@ const (
 
 func main() {
 	pathOption := "."
-	outputFileOption := filepath.Join("deploy", "generated.yaml")
+	outputFileOption := filepath.Join("static", "generated.yaml")
 	config := configMap{}
 	resourceList := &framework.ResourceList{FunctionConfig: &config}
 	cmd := framework.Command(resourceList, func() (err error) {
@@ -153,12 +153,7 @@ func buildKustomization(outputPath string, kustomizeArgs []string) ([]*yaml.RNod
 		if err != nil {
 			break
 		}
-		lookupAnnotations := yaml.LookupCreate(yaml.MappingNode, yaml.MetadataField, yaml.AnnotationsField)
-		err = o.PipeE(lookupAnnotations, yaml.FieldSetter{Name: annotationIndex, StringValue: strconv.Itoa(len(r))})
-		if err != nil {
-			break
-		}
-		err = o.PipeE(lookupAnnotations, yaml.FieldSetter{Name: annotationPath, StringValue: outputPath})
+		err = setKptAnnotations(o, outputPath, len(r))
 		if err != nil {
 			break
 		}
@@ -168,6 +163,26 @@ func buildKustomization(outputPath string, kustomizeArgs []string) ([]*yaml.RNod
 		return nil, fmt.Errorf("process kustomize output: %w", err)
 	}
 	return r, nil
+}
+
+func setKptAnnotations(o *yaml.RNode, path string, index int) error {
+	// Remove annotations field if empty.
+	// This is required because LookupCreate() doesn't create the MappingNode if it exists but is empty.
+	err := o.PipeE(yaml.LookupCreate(yaml.MappingNode, yaml.MetadataField), yaml.FieldClearer{Name: yaml.AnnotationsField, IfEmpty: true})
+	if err != nil {
+		return err
+	}
+	// Add path annotations
+	lookupAnnotations := yaml.LookupCreate(yaml.MappingNode, yaml.MetadataField, yaml.AnnotationsField)
+	err = o.PipeE(lookupAnnotations, yaml.FieldSetter{Name: annotationIndex, StringValue: strconv.Itoa(index)})
+	if err != nil {
+		return err
+	}
+	err = o.PipeE(lookupAnnotations, yaml.FieldSetter{Name: annotationPath, StringValue: path})
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func writeFile(file string, transformed *yaml.RNode) (err error) {
