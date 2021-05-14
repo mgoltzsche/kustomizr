@@ -1,1 +1,3 @@
 kustomizr
+build
+examples/*/static/generated-manifest.yaml

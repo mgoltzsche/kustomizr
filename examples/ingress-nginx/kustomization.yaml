@@ -1,0 +1,2 @@
+resources:
+- github.com/kubernetes/ingress-nginx//deploy/static/provider/baremetal?ref=controller-v0.46.0
