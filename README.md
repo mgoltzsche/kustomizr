@@ -1,4 +1,4 @@
-kustomizr
+kustomizr ![GitHub workflow badge](https://github.com/mgoltzsche/kustomizr/workflows/Semantic%20release/badge.svg)
 =
 
 A [kpt function](https://googlecontainertools.github.io/kpt/guides/producer/functions/#declaring-functions)
